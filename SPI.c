@@ -20,8 +20,8 @@ void InitSPI()
 	UCB0CTL0 = UCCKPH | UCMSB | UCMST | UCMODE_0 | UCSYNC; // SPI mode 0, master
 	UCB0CTL1 = UCSSEL1;						// SMCLK
 
-	//UCB0BR0 = 16;							//16MHz / 8, about 2MHz for UCLK
-	UCB0BR0 = 1;							//2MHz DCO / 1, about 2MHz for UCLK
+	UCB0BR0 = 8;							//16MHz / 8, about 2MHz for UCLK
+	//UCB0BR0 = 1;							//2MHz DCO / 1, about 2MHz for UCLK
 	UCB0BR1 = 0;
 
 	//

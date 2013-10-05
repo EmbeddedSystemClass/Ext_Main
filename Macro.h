@@ -24,5 +24,11 @@
 #define SOLAR_STATE		BIT1
 #define BATTERY_LOW_STATE	BIT2
 
+#define GPS_OFF			P4OUT &= ~(BIT0)
+#define GPS_ON			P4OUT |= BIT0
+#define GPS_LED_OFF		P3OUT |= BIT7
+#define GPS_LED_ON		P3OUT &= ~(BIT7)
+#define GPS_LED_TOGGLE	P3OUT ^= BIT7
+
 
 #endif /* MACRO_H_ */

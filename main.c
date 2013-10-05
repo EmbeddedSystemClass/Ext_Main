@@ -9,6 +9,9 @@
 #include "BMP085.h"
 #include "nRF24L01P.h"
 #include "Process.h"
+#include "UART.h"
+#include "GPSRelay.h"
+
 
 int main( void )
 {
@@ -31,16 +34,50 @@ void Init()
 	// Stop watchdog timer to prevent time out reset
     WDTCTL = WDTPW + WDTHOLD;
 
-	//Adjust DCO frequency
-    //DCOCTL	= DCO0 + DOC1 +DOC2;
-    DCOCTL	= 0x80;
-	BCSCTL1	= XT2OFF + RSEL0 + RSEL1 + RSEL2;
-    //BCSCTL1	= RSEL0 + RSEL1 + RSEL2;
 
-	BCSCTL2	= 0;		// 实用外部晶振（16M）
+    /*
+     * Basic Clock System Control 2
+     *
+     * SELM_0 -- DCOCLK
+     * DIVM_0 -- Divide by 1
+     * SELS -- XT2CLK when XT2 oscillator present. LFXT1CLK or VLOCLK when XT2 oscillator not present
+     * DIVS_0 -- Divide by 1
+     * ~DCOR -- DCO uses internal resistor
+     *
+     * Note: ~DCOR indicates that DCOR has value zero
+     */
+    BCSCTL2 = SELM_0 + DIVM_0 + SELS + DIVS_0;
 
-	//BCSCTL2 = SELM_2;
-	//BCSCTL3 |= XT2S_2;
+    if (CALBC1_1MHZ != 0xFF) {
+        /* Follow recommended flow. First, clear all DCOx and MODx bits. Then
+         * apply new RSELx values. Finally, apply new DCOx and MODx bit values.
+         */
+        DCOCTL = 0x00;
+        BCSCTL1 = CALBC1_1MHZ;      /* Set DCO to 1MHz */
+        DCOCTL = CALDCO_1MHZ;
+    }
+
+    /*
+     * Basic Clock System Control 1
+     *
+     * ~XT2OFF -- Enable XT2CLK
+     * ~XTS -- Low Frequency
+     * DIVA_0 -- Divide by 1
+     *
+     * Note: ~<BIT> indicates that <BIT> has value zero
+     */
+    BCSCTL1 |= DIVA_0;
+
+    BCSCTL1 &= ~XT2OFF;
+
+    /*
+     * Basic Clock System Control 3
+     *
+     * XT2S_2 -- 3 - 16 MHz
+     * LFXT1S_0 -- If XTS = 0, XT1 = 32768kHz Crystal ; If XTS = 1, XT1 = 0.4 - 1-MHz crystal or resonator
+     * XCAP_1 -- ~6 pF
+     */
+    BCSCTL3 = XT2S_2 + LFXT1S_0 + XCAP_1;
 
 
 	InitPort();
@@ -56,6 +93,10 @@ void Init()
 	Init_BMP085();
 
 	InitTimer();
+
+	InitGPSRelay();
+	InitUARTA0();
+	InitUARTA1();
 
 
 	ShutdownModule();
@@ -126,10 +167,12 @@ void InitPort()
 	P6SEL |= BIT2;
 
 	//SPI(USART0 3 wire SPI Mode)(//nRF24L01+)
-	P3SEL &= ~(BIT0 + BIT5);		//CSN and CE
-	P3DIR |= BIT0 + BIT5;
-	P3OUT &= ~BIT5;					//CE low
+	P3SEL &= ~(BIT0);				//CSN
+	P3DIR |= BIT0;
 	P3OUT |= BIT0;					//CSN high
+	P2SEL &= ~(BIT6);				// P2.6 CE
+	P2DIR |= BIT6;
+	P2OUT &= ~BIT6;					// CE low
 
 	P2SEL &= ~BIT7;					//IRQ
 	P2DIR &= ~BIT7;
@@ -149,6 +192,27 @@ void InitPort()
 	P5DIR |= BIT0;					// P5.0 BMP085 XCLR output(Low active)
 	P5SEL |= BIT1 + BIT2;			// I2C总线
 
+	// GPS模块（P4.0：控制3.3v电源模块，0：禁用，1：输出3.3v。 P3.7：LED指示灯输出，0：亮。 )
+	//        (P3.5 A0串口RX（功能引脚，GPS 9600）。 P3.6  A1串口TX（功能引脚，4800））
+	//		  (P1.0按键输入（中断，上升沿，下拉启用）
+	P4DIR |= BIT0;
+	P4SEL &= ~(BIT0);
+	GPS_OFF;
+
+	P3DIR |= BIT7;
+	P3SEL &= ~(BIT7);
+	GPS_LED_OFF;
+
+	P3SEL |= BIT5;		// UA0 RX(GPS IN)
+	P3SEL |= BIT6;		// UA1 TX
+
+	P1DIR &= ~(BIT0);	//input
+	P1SEL &= ~(BIT0);
+	P1REN |= BIT0 ;		//Enable pull down/pull up
+	P1OUT &= ~(BIT0);	//pull down
+	P1IES &= ~(BIT0);	//上升沿触发
+	P1IE |= BIT0;		//允许中断
+
 
 	//Wind Power
 
@@ -165,7 +229,7 @@ void ShutdownModule()
 
 
 // 没有使用的中断（如果出现，则复位）
-#pragma vector=ADC12_VECTOR, COMPARATORA_VECTOR, NMI_VECTOR, PORT1_VECTOR, TIMERB0_VECTOR, TIMERB1_VECTOR, USCIAB0RX_VECTOR, USCIAB0TX_VECTOR, USCIAB1RX_VECTOR, USCIAB1TX_VECTOR, WDT_VECTOR
+#pragma vector=ADC12_VECTOR, COMPARATORA_VECTOR, NMI_VECTOR, TIMERB0_VECTOR, TIMERB1_VECTOR, USCIAB1RX_VECTOR, USCIAB0TX_VECTOR, WDT_VECTOR
 __interrupt void ISR_trap(void)
 {
 	// the following will cause an access violation which results in a PUC reset

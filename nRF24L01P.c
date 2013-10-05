@@ -17,8 +17,8 @@ static unsigned int			s_unSerialNo = 0;
 
 static union struSendData	s_SendData;
 
-#define CE_0		P3OUT &= ~BIT5
-#define CE_1		P3OUT |= BIT5
+#define CE_0		P2OUT &= ~BIT6
+#define CE_1		P2OUT |= BIT6
 
 //initialize nRF24L01+
 void InitRF()

@@ -10,6 +10,7 @@
 #include "adc.h"
 #include "SHT11.h"
 #include "BMP085.h"
+#include "GPSRelay.h"
 
 
 //state for LED/Solar charge/other
@@ -254,6 +255,9 @@ void CheckVoltage()
 	{
 		// Sun raise, turn off LED.
 		LED_Off();
+
+		// 2013.10.7：太阳升起后，开启GPS，获取时间
+		TurnOnGPS(0);
 
 		// maybe can re-charge
 		g_ucState &= ~BATTERY_LOW_STATE;

@@ -15,4 +15,7 @@ void ReceiveByte(char c);
 
 unsigned char GetNextChar(char* pNextChar);
 
+void TurnOnGPS(int manual);
+void TurnOffGPS();
+
 #endif /* GPSRELAY_H_ */

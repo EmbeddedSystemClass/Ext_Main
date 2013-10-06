@@ -6,8 +6,10 @@
  */
 
 #include "GPSRelay.h"
+#include "Macro.h"
 #include <string.h>
-#include <stdio.h>
+
+
 
 char			GP_HEAD[6];		// 缓存接收的头，用来区分准备存放在哪个缓冲区
 unsigned char	head_Pos;		// 当前头部接收的字节
@@ -26,8 +28,14 @@ char*			pTXBuffer;		// 当前正在发送的Buffer
 char*			pTXBuffer2;		// 备用发送Buffer，当pTXBuffer还在发送时，存放下一个准备发送的Buffer指针
 unsigned char	txPos;
 
+
 void ReceiveHead(char c);
 void ReceiveGPxxx(char c);
+void GetDateTime();
+int dayofweek();
+int string2number(char c1, char c2);
+void NeedTurnOffGPS();
+
 
 void InitGPSRelay()
 {
@@ -120,6 +128,8 @@ void ReceiveGPxxx(char c)
 		pRXBuffer[rxPos] = 0x0D;
 		rxPos++;
 		pRXBuffer[rxPos] = 0x0A;
+		rxPos++;
+		pRXBuffer[rxPos] = 0;		// 多写个结束符，避免后续处理字符串异常
 
 		// 启动发送
 		if (pTXBuffer == 0)
@@ -135,6 +145,10 @@ void ReceiveGPxxx(char c)
 		}
 
 		// 分析GPRMC中的时间
+		if (pRXBuffer == GPRMC)
+		{
+			GetDateTime();
+		}
 
 		pRXBuffer = 0;
 		rxPos = 7;
@@ -183,8 +197,137 @@ unsigned char GetNextChar(char* pNextChar)
 	txPos++;
 
 	return 1;
+}
+
+int		hour;
+int		minute;
+int		year;
+int		month;
+int		day;
+int		weekday;
+
+int		isManual;
+
+void GetDateTime()
+{
+	// 从GPRMC中分离处理UCT时间，并计算出星期几（要判断当前RMC是否有效）
+	char*	p;
+	int		index;
+
+	p = GPRMC;
+	index = 0;
+
+	while (*p != 0x0D)
+	{
+		if (*p == ',')
+		{
+			switch (index)
+			{
+			case 0:			// 时间
+				hour = string2number(*(p + 1), *(p + 2));
+				if (hour < 0)
+					return;
+				minute = string2number(*(p + 3), *(p + 4));
+				if (minute < 0)
+					return;
+
+				break;
+
+			case 1:			// 定位状态（A：有效）、
+				if (*(p + 1) != 'A')
+				{
+					// 非定位状态，时间不可靠
+					return;
+				}
+				break;
+
+			case 8:			// 日期
+				day = string2number(*(p + 1), *(p + 2));
+				month = string2number(*(p + 3), *(p + 4));
+				year = string2number(*(p + 5), *(p + 6)) + 2000;
+				// 日期不需要分析有效性，因为在定位状态时，就已经会跳出判断了。
+
+				// 分析星期几
+				weekday = dayofweek();
+
+				// 检查是否需要关闭GPS
+				NeedTurnOffGPS();
+
+				return;
+			}
+
+			index++;
+		}
+
+		p++;
+	}
+}
 
 
+/**
+ * dayofweek - 蔡勒公式 calculate the week day of one day
+ * @return: 0 Sun, 1 Mon, 2 Tue, 3 Wed, 4 Thu, 5 Fri, 6 Sat
+ */
+int dayofweek()
+{
+	static int t[] = {0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4};
+	year -= month < 3;
+	return (year + year/4 - year/100 + year/400 + t[month-1] + day) % 7;
+}
+
+int string2number(char c1, char c2)
+{
+	if ((c1 < '0') || (c1 > '9') || (c2 < '0') || (c2 > '9'))
+	{
+		// 有不合法字符
+		return -1;
+	}
+
+	return (c1 - '0') * 10 + (c2 - '0');
+}
+
+// 开启GPS。1：手动启动GPS，0：自动启动
+void TurnOnGPS(int manual)
+{
+	GPS_LED_ON;
+	GPS_ON;
+
+	isManual = manual;
+}
+
+void TurnOffGPS()
+{
+	GPS_LED_OFF;
+	GPS_OFF;
+}
+
+// 判断是否需要开启或关闭GPS
+void NeedTurnOffGPS()
+{
+	// 判断是否手动启动，如果是，就不自动关闭
+	if (isManual)
+		return;
+
+	// 不是星期天或星期一（UTC时间），就关闭GPS。（GPS预计开启时间为：UTC星期天22点～星期一0：15。）
+	if (weekday == 0)
+	{
+		if (hour > 20)	// 中国时间大概周一凌晨4点前，关闭GPS
+		{
+			// 已经是中国时间周一凌晨5点了，不关闭GPS
+			return;
+		}
+	}
+	else if (weekday == 1)
+	{
+		if ((hour == 0) && (minute < 15))
+		{
+			// 还没有到中国时间周一8：15，不关闭GPS
+			return;
+		}
+	}
+
+	// 其他时间都关闭GPS
+	TurnOffGPS();
 }
 
 

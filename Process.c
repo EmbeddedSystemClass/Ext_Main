@@ -187,12 +187,18 @@ void LED_On()
 	}
 }
 
-void LED_Off()
+// 返回1：执行关灯动作（从亮变暗），0：没有关灯动作
+int LED_Off()
 {
 	if (g_ucState & LAMP_STATE)
 	{
 		LAMP_OFF;
 		g_ucState &= ~LAMP_STATE;
+		return 1;
+	}
+	else
+	{
+		return 0;
 	}
 }
 
@@ -254,10 +260,12 @@ void CheckVoltage()
 	if (g_nSolar >= SOLAR_LOW_UP)
 	{
 		// Sun raise, turn off LED.
-		LED_Off();
-
-		// 2013.10.7：太阳升起后，开启GPS，获取时间
-		TurnOnGPS(0);
+		if (LED_Off())
+		{
+			// 2013.10.7：太阳升起后，开启GPS，获取时间
+			// 2013.10.7：修改，只有在从亮变灭的过程，才开启GPS。因为LED_Off会多次执行，导致GPS不断开关
+			TurnOnGPS(0);
+		}
 
 		// maybe can re-charge
 		g_ucState &= ~BATTERY_LOW_STATE;
